@@ -1,90 +1,124 @@
-# app.py
 import streamlit as st
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import SentenceTransformerEmbeddings
-from langchain_community.llms import Ollama
-from langchain.chains import RetrievalQA
-import os
+from langchain.callbacks.base import BaseCallbackHandler
 
-# --- Configurações (MESMAS DO SEU PROJETO) ---
-CHROMA_DB_PATH = "./chroma_db"
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
-LLM_MODEL_NAME = "llama3" # Ou mistral, phi3, etc. - o modelo que você baixou no Ollama
+from config import CHROMA_DB_PATH, MAX_CODE_LENGTH
+from agent import load_security_agent
 
-# --- Função para Carregar a Cadeia RAG (com cache para otimizar) ---
-@st.cache_resource
-def load_rag_chain():
-    # Verifica se a base de dados ChromaDB existe
-    if not os.path.exists(CHROMA_DB_PATH):
-        st.error(f"Erro: Base de dados ChromaDB não encontrada em '{CHROMA_DB_PATH}'.")
-        st.error("Por favor, execute o script 'indexar_documentos.py' primeiro para criar a base de conhecimento.")
-        st.stop() # Interrompe a execução do Streamlit
+st.set_page_config(page_title="Security Agent - Code Analyzer", page_icon="🔒")
 
-    # Carregar o modelo de embedding
-    with st.spinner(f"Carregando modelo de embedding: {EMBEDDING_MODEL_NAME}..."):
-        embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-    
-    # Carregar o ChromaDB persistente
-    with st.spinner(f"Carregando base de dados ChromaDB de: {CHROMA_DB_PATH}..."):
-        db = Chroma(persist_directory=CHROMA_DB_PATH, embedding_function=embeddings)
-    
-    # Configurar a LLM do Ollama
-    with st.spinner(f"Conectando à LLM local: {LLM_MODEL_NAME} (via Ollama)..."):
-        # Certifique-se que o aplicativo Ollama está rodando e o modelo LLM_MODEL_NAME foi baixado.
-        llm = Ollama(model=LLM_MODEL_NAME)
-    
-    # Criar a cadeia de RetrievalQA
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=db.as_retriever(search_kwargs={"k": 4}), # Recupera os 4 chunks mais relevantes
-        return_source_documents=True
+st.title("Security Agent — Code Vulnerability Analyzer 🔒")
+st.markdown(
+    "Paste your **Python** code below. The **ReAct agent** will analyze it for security "
+    "vulnerabilities using OWASP standards and best practices."
+)
+
+# Check if knowledge base exists
+if not CHROMA_DB_PATH.exists():
+    st.error(
+        "Knowledge base not found. Go to the **Admin** page to upload "
+        "security documents and train the system."
     )
-    return qa_chain
+    st.stop()
 
-# --- Interface do Streamlit ---
-st.set_page_config(page_title="Dr. Mec X - Farmácia Genial 💊", page_icon="💡")
+# Load agent
+agent_executor = load_security_agent()
+if agent_executor is None:
+    st.error("Could not load the security agent. Please train the knowledge base first.")
+    st.stop()
 
-st.title("Dr. Mec X - Farmácia Genial 💊")
-st.markdown("Bem-vindo(a) ao seu assistente de conhecimento farmacêutico local!")
-st.markdown("Faça perguntas sobre os seus documentos PDF e obtenha respostas baseadas neles.")
 
-# Carregar a cadeia RAG apenas uma vez ao iniciar o aplicativo
-qa_chain = load_rag_chain()
+# --- Streaming Callback ---
+class StreamlitReActCallback(BaseCallbackHandler):
+    """Shows ReAct reasoning steps in real-time."""
 
-# Campo de entrada para a pergunta
-user_query = st.text_area("Digite sua pergunta aqui:", placeholder="Ex: Qual a dosagem recomendada para Ibuprofeno em adultos?", height=100)
+    def __init__(self, container):
+        self.container = container
+        self.step_count = 0
 
-if st.button("Obter Resposta"):
-    if user_query:
-        # Exibe um spinner enquanto a resposta está sendo gerada
-        with st.spinner("Buscando informações e gerando resposta..."):
-            try:
-                # Chama a cadeia RAG com a pergunta do usuário
-                response = qa_chain.invoke({"query": user_query})
-                
-                # Exibe a resposta
-                st.subheader("Resposta:")
-                st.info(response["result"]) # Usa st.info para um fundo azul claro
+    def on_agent_action(self, action, **kwargs):
+        self.step_count += 1
+        self.container.markdown(
+            f"**Step {self.step_count}:** 🔧 Using tool `{action.tool}`"
+        )
 
-                # Exibe as fontes, se disponíveis
-                if "source_documents" in response and response["source_documents"]:
-                    st.subheader("Fontes Encontradas:")
-                    for i, doc in enumerate(response["source_documents"]):
-                        source_page = doc.metadata.get('page')
-                        source_file = doc.metadata.get('source')
-                        
-                        file_info = os.path.basename(source_file) if source_file else "Desconhecido"
-                        page_info = f", Página: {source_page + 1}" if source_page is not None else ""
-                        
-                        st.markdown(f"- **{i+1}. Arquivo:** `{file_info}`{page_info}")
-                else:
-                    st.markdown("Nenhuma fonte específica encontrada para esta resposta.")
-            except Exception as e:
-                st.error(f"Ocorreu um erro ao processar sua pergunta: {e}")
-                st.warning("Verifique se o aplicativo Ollama está rodando e se o modelo LLM está disponível.")
+    def on_tool_end(self, output, **kwargs):
+        with self.container.expander(
+            f"Observation {self.step_count}", expanded=False
+        ):
+            st.text(str(output)[:800])
+
+
+# --- Code Input ---
+st.subheader("Python Code to Analyze")
+
+code_input = st.text_area(
+    "Paste your Python code here:",
+    height=300,
+    max_chars=MAX_CODE_LENGTH,
+    placeholder=(
+        "# Example: paste code with potential vulnerabilities\n"
+        "import os\n"
+        "password = 'admin123'\n"
+        "query = 'SELECT * FROM users WHERE id=' + user_input\n"
+        "os.system(command)"
+    ),
+)
+
+char_count = len(code_input) if code_input else 0
+st.caption(f"{char_count}/{MAX_CODE_LENGTH} characters")
+
+# --- Analysis ---
+if st.button("🔍 Analyze Security", type="primary"):
+    if not code_input or code_input.strip() == "":
+        st.warning("Please paste some code before running the analysis.")
     else:
-        st.warning("Por favor, digite uma pergunta antes de clicar em 'Obter Resposta'.")
+        # Wrap code in USER_CODE tags for prompt injection mitigation
+        agent_query = (
+            "Analyze this Python code for security vulnerabilities:\n"
+            f"<USER_CODE>\n{code_input}\n</USER_CODE>"
+        )
+
+        # Create containers for streaming and results
+        reasoning_container = st.container()
+        reasoning_container.markdown("### 🧠 Agent Reasoning (live)")
+
+        with st.spinner("Agent is analyzing your code..."):
+            try:
+                callback = StreamlitReActCallback(reasoning_container)
+                result = agent_executor.invoke(
+                    {"input": agent_query},
+                    config={"callbacks": [callback]},
+                )
+
+                # Display the final answer
+                st.subheader("Security Analysis Results")
+                st.markdown(result["output"])
+
+                # Display ReAct reasoning steps (full detail)
+                if result.get("intermediate_steps"):
+                    with st.expander(
+                        "📋 Full ReAct Trace (all steps)", expanded=False
+                    ):
+                        for i, (action, observation) in enumerate(
+                            result["intermediate_steps"], 1
+                        ):
+                            st.markdown(f"**Step {i} — Tool:** `{action.tool}`")
+                            st.markdown(
+                                f"**Input:** `{str(action.tool_input)[:300]}`"
+                            )
+                            st.code(str(observation)[:1000], language=None)
+                            st.markdown("---")
+
+            except Exception as e:
+                st.error(f"Error during analysis: {e}")
+                st.warning(
+                    "Make sure Ollama is running and the LLM model is available. "
+                    "Also verify the knowledge base has been trained."
+                )
 
 st.markdown("---")
-st.markdown("Lembre-se de que a qualidade da resposta depende dos documentos fornecidos e do modelo LLM.")
+st.markdown(
+    "This agent uses **ReAct (Reasoning and Acting)** — it reasons about potential "
+    "vulnerabilities, acts by consulting tools and the OWASP knowledge base, "
+    "observes results, and continues until it can deliver a structured review."
+)
