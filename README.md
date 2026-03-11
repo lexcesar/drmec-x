@@ -241,7 +241,7 @@ python3 -m pytest tests/ -v
 
 ## Licença
 
-MIT License
+Proprietary License - All Rights Reserved. Este software é propriedade exclusiva de Alexander Costa. Cópia, modificação, distribuição e uso comercial são estritamente proibidos sem autorização prévia por escrito. Consulte o arquivo [LICENSE](LICENSE) para detalhes.
 
 ## Contato
 
