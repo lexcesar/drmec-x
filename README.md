@@ -1,116 +1,248 @@
-# Dr. Mec X - Farmácia Genial: Assistente de Conhecimento Farmacêutico 💊💡
+# Security Agent — OWASP Code Analyzer 🔒
 
-## 📖 Sobre o Projeto
+## Sobre o Projeto
 
-O Farmácia Genial é um assistente inteligente baseado em Large Language Models (LLMs) e Retrieval Augmented Generation (RAG). Ele permite que profissionais e estudantes da área farmacêutica consultem e obtenham respostas precisas a partir de uma base de conhecimento personalizada, construída com documentos PDF específicos (por exemplo, bulas, artigos científicos, diretrizes, etc.).
+Agente de IA para **Engenharia de Software para Segurança** que utiliza o padrão **ReAct (Reasoning and Acting)** para analisar código Python em busca de vulnerabilidades com base nos padrões OWASP.
 
-O objetivo é centralizar e facilitar o acesso à informação crucial, transformando documentos extensos em uma fonte interativa de conhecimento.
+O sistema opera em **duas fases**:
 
-### ✨ Funcionalidades
+1. **Análise Estática Determinística** — 14 padrões regex pré-compilados detectam vulnerabilidades instantaneamente, com severidade e referência OWASP
+2. **Agente ReAct com RAG** — LLM com raciocínio multi-step consulta a base de conhecimento OWASP para contexto adicional e sugestões de correção
 
-- Upload de PDFs: Carregue seus próprios documentos PDF para construir sua base de conhecimento.
-- Gestão de Documentos: Visualize os PDFs carregados e remova-os da base do sistema.
-- Treinamento da Base de Conhecimento: Indexe os documentos PDF para que a LLM possa consultá-los.
-- Reinício Completo da Base: Opção para apagar e reconstruir toda a base de conhecimento do zero.
-- Perguntas e Respostas: Faça perguntas em linguagem natural e receba respostas baseadas exclusivamente no conteúdo dos PDFs carregados.
-- Fontes da Resposta: Visualização dos documentos e páginas utilizadas para gerar a resposta.
+### Stack Tecnológica
 
-### 🛠️ Tecnologias Utilizadas
-
-- Python: Linguagem principal de desenvolvimento.
-- Streamlit: Framework para criação rápida da interface web interativa.
-- Ollama: Para rodar Large Language Models (LLMs) localmente (ex: Llama3).
-- LangChain: Framework para desenvolvimento de aplicações com LLMs, facilitando a orquestração do RAG.
-- ChromaDB: Base de dados vetorial para armazenar os embeddings dos documentos e realizar a busca de similaridade.
-- Sentence Transformers: Para gerar os embeddings (representações vetoriais) dos textos.
-- PyPDFLoader: Para carregar e extrair texto de arquivos PDF.
+| Tecnologia | Função |
+|---|---|
+| **Python 3.9+** | Linguagem principal |
+| **Streamlit** | Interface web interativa |
+| **Ollama** | Inferência LLM local (llama3.1:8b) |
+| **LangChain** | Framework ReAct agent com ferramentas |
+| **ChromaDB** | Banco vetorial para base de conhecimento OWASP |
+| **Sentence Transformers** | Embeddings de texto (all-MiniLM-L6-v2) |
 
 ---
 
-## 🚀 Como Executar o Projeto
+## Arquitetura
 
-Siga os passos abaixo para configurar e rodar o Farmácia Genial em sua máquina local.
+```
+Streamlit UI
+├── Home Page (entrada de código → análise em 2 fases)
+│   ├── Phase 1: Análise estática (regex, instantânea)
+│   └── Phase 2: Agente ReAct (LLM + RAG)
+└── Admin Page (autenticada: upload/treino/reset da KB)
+
+Agente ReAct (LangChain AgentExecutor)
+├── Ferramentas (4):
+│   ├── analyze_code      — análise estática com 14 padrões regex
+│   ├── search_owasp_kb   — busca vetorial na base OWASP
+│   ├── get_cve_details   — lookup de CVE/CWE específicos
+│   └── search_remediation — busca direcionada para correções
+├── Retriever singleton (lru_cache)
+├── Streaming callbacks → UI em tempo real
+└── Ollama llama3.1:8b (temperature=0)
+
+Armazenamento: ChromaDB (KB vetorial) + knowledge-base/ (documentos fonte)
+```
+
+---
+
+## Como Executar
 
 ### Pré-requisitos
 
-Certifique-se de ter instalado:
-
 - Python 3.9+
-- Ollama: Baixe e instale o Ollama em ollama.com.
+- [Ollama](https://ollama.com) instalado e rodando
 
 ### 1. Clonar o Repositório
 
 ```bash
-git clone https://github.com/dnegrone/drmec-x.git
-cd drmec-x # Ou o nome da pasta do seu projeto
+git clone https://github.com/lexcesar/drmec-x.git
+cd drmec-x
 ```
 
-### 2. Configurar o Ambiente Virtual
-
-É altamente recomendável usar um ambiente virtual para gerenciar as dependências do projeto.
+### 2. Criar Ambiente Virtual
 
 ```bash
-python3 -m venv venv (ou python -m venv venv)
-source venv/bin/activate # No Linux/macOS
-# venv\Scripts\activate # No Windows
+python3 -m venv venv
+source venv/bin/activate  # Linux/macOS
+# venv\Scripts\activate   # Windows
 ```
 
 ### 3. Instalar Dependências
-
-Instale todas as bibliotecas Python necessárias.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Nota: Se você ainda não criou o requirements.txt, pode gerá-lo a partir das suas instalações atuais:
-`pip freeze > requirements.txt`
-
-Ou, instale as principais individualmente:
-`pip install streamlit ollama langchain langchain-community pypdf sentence-transformers chromadb`
-
-### 4. Baixar o Modelo LLM com Ollama
-
-Abra seu terminal e baixe o modelo LLM que será usado pelo projeto. Recomendamos llama3 para começar.
+### 4. Baixar o Modelo LLM
 
 ```bash
-ollama run llama3
+ollama pull llama3.1:8b
 ```
 
-Espere o download ser concluído e o modelo inicializar. Você pode fechar o terminal do Ollama depois de garantir que o modelo está baixado, mas o serviço Ollama precisa estar rodando em segundo plano para o projeto funcionar.
+Certifique-se de que o serviço Ollama está rodando.
 
-### 5. Executar o Aplicativo Streamlit
-
-Com todas as dependências instaladas e o Ollama rodando, inicie o aplicativo.
+### 5. Iniciar a Aplicação
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-(Se você ainda tem a estrutura de pastas `pages/`, o comando seria `streamlit run streamlit_app.py`)
-
-O aplicativo será aberto automaticamente no seu navegador padrão (geralmente em http://localhost:8501).
+Acesse http://localhost:8501.
 
 ---
 
-## ⚙️ Uso da Área Administrativa
+## Uso
 
-### Após iniciar o aplicativo:
+### 1. Configurar Base de Conhecimento (Página Admin)
 
-1. **Acesse a Área Admin:** Clique no botão **"⚙️ Admin"** na interface para acessar a área de gerenciamento.
-2. **Carregar PDFs:** Arraste e solte seus documentos PDF na seção **"Carregar e Visualizar PDFs"**.
-3. **Treinar Sistema:** Após carregar os PDFs, clique em **"Treinar Sistema com Dados Atuais"** na seção **"Ações da Base de Conhecimento"** para indexar o conteúdo dos PDFs na base de dados do sistema.
-4. **Reiniciar Conhecimento:** Se desejar apagar e reconstruir toda a base de conhecimento, use o botão **"Reiniciar TODO o Conhecimento do Sistema"** (requer confirmação).
-5. **Excluir PDFs:** Na lista de **"PDFs Carregados no Sistema"**, você pode clicar em **"Excluir"** ao lado de cada arquivo para removê-lo da pasta. Lembre-se de **"Treinar o Sistema"** novamente após excluir arquivos para que as alterações reflitam na base de conhecimento da IA.
+1. Acesse a página **Admin** pelo sidebar
+2. Insira a senha (padrão: `admin`, configurável via `ADMIN_PASSWORD`)
+3. Faça upload de documentos OWASP (PDF, Markdown ou texto)
+4. Clique em **"Train System with Current Data"**
 
-### 🙋 Contribuição
+### 2. Analisar Código (Página Home)
 
-Contribuições são bem-vindas! Se você tiver sugestões, melhorias ou encontrar bugs, sinta-se à vontade para abrir uma issue ou enviar um pull request.
+1. Acesse a página **Home**
+2. Cole seu código Python na área de texto
+3. Clique em **"Analyze Security"**
+4. Veja os resultados em duas fases:
+   - **Phase 1**: Tabela com vulnerabilidades detectadas (severidade, linha, OWASP)
+   - **Phase 2**: Análise do agente ReAct com contexto da base OWASP
 
-### 📄 Licença
+### Exemplo de Código para Teste
 
-Este projeto está licenciado sob a licença MIT License.
+```python
+import os
+import pickle
+import random
 
-### 📞 Contato
+password = "admin123"
+DEBUG = True
+
+def get_user(user_id):
+    query = "SELECT * FROM users WHERE id=" + user_id
+    return db.execute(query)
+
+def run_command(cmd):
+    os.system(cmd)
+
+def load_data(raw_bytes):
+    return pickle.loads(raw_bytes)
+
+def generate_token():
+    return random.randint(1000, 9999)
+
+def fetch_data(url):
+    requests.get(url, verify=False)
+
+config = yaml.load(open("config.yml"))
+```
+
+---
+
+## Padrão ReAct (Reasoning and Acting)
+
+O agente segue um loop de raciocínio multi-step:
+
+```
+Thought  → "Devo verificar este código para padrões de injeção SQL"
+Action   → analyze_code (detecção estática de padrões)
+Observe  → "Encontrada concatenação SQL na linha 10"
+Thought  → "Vou buscar os padrões OWASP para esta vulnerabilidade"
+Action   → search_owasp_kb (busca vetorial nos documentos de segurança)
+Observe  → "OWASP A03:2021 - Injection..."
+Thought  → "Agora preciso buscar orientação de correção"
+Action   → search_remediation (busca direcionada para remediação)
+Observe  → "Use queries parametrizadas..."
+Answer   → Relatório estruturado com findings + correções
+```
+
+---
+
+## Ferramentas do Agente
+
+| Ferramenta | Tipo | O que faz (que o LLM não consegue sozinho) |
+|---|---|---|
+| `analyze_code` | Determinístico | Matching de regex para 14 padrões de vulnerabilidade |
+| `search_owasp_kb` | RAG | Busca por similaridade vetorial nos documentos de segurança |
+| `get_cve_details` | RAG | Lookup de identificadores CVE/CWE específicos na KB |
+| `search_remediation` | RAG | Busca direcionada para seções de correção/mitigação |
+
+### Padrões de Vulnerabilidade Detectados (Phase 1)
+
+| Padrão | Severidade | OWASP |
+|---|---|---|
+| Credenciais hardcoded (password, api_key, token) | 🟠 High | A07:2021 |
+| Funções perigosas (exec, eval, compile) | 🔴 Critical | A03:2021 |
+| SQL Injection (concatenação/format) | 🔴 Critical | A03:2021 |
+| Command Injection (subprocess shell=True) | 🔴 Critical | A03:2021 |
+| Desserialização insegura (pickle) | 🟠 High | A08:2021 |
+| YAML load sem Loader | 🟠 High | A08:2021 |
+| Execução de comando OS (os.system/popen) | 🔴 Critical | A03:2021 |
+| SSL verificação desabilitada | 🟠 High | A02:2021 |
+| Hash fraco (MD5/SHA1) | 🟠 High | A02:2021 |
+| Random não-criptográfico | 🟠 High | A02:2021 |
+| XSS (innerHTML/document.write) | 🔴 Critical | A03:2021 |
+| URL HTTP sem criptografia | 🟠 High | A02:2021 |
+| Debug mode habilitado | 🟡 Medium | A05:2021 |
+| CORS wildcard (*) | 🟡 Medium | A05:2021 |
+
+---
+
+## Segurança da Aplicação
+
+O próprio sistema implementa medidas de segurança:
+
+- **Mitigação de Prompt Injection**: delimitadores `<USER_CODE>` + sanitização de tokens ReAct
+- **Autenticação no Admin**: senha configurável via variável de ambiente
+- **Sanitização de uploads**: validação de nome de arquivo contra path traversal
+- **Validação de extensão**: apenas PDF, MD e TXT aceitos (server-side)
+- **Mensagens de erro genéricas**: sem exposição de detalhes internos
+- **Timeout do agente**: limite de 120s e 6 iterações
+
+---
+
+## Estrutura de Arquivos
+
+```
+drmec-x/
+├── streamlit_app.py        # Ponto de entrada
+├── config.py               # Configuração centralizada (pathlib)
+├── static_analysis.py      # Padrões regex + analyze_code (sem dependências LangChain)
+├── tools.py                # 3 ferramentas RAG + retriever singleton
+├── agent.py                # Agente ReAct + prompt com few-shot
+├── pages/
+│   ├── home.py             # UI de análise (2 fases)
+│   └── admin.py            # Administração da KB (autenticada)
+├── knowledge-base/         # Documentos OWASP (fonte)
+├── chroma_db/              # Banco vetorial ChromaDB (gerado)
+├── tests/
+│   ├── test_analyze_code.py  # 27 testes dos padrões regex
+│   └── test_tools.py         # 11 testes das ferramentas RAG (mock)
+└── requirements.txt
+```
+
+---
+
+## Testes
+
+```bash
+python3 -m pytest tests/ -v
+```
+
+38 testes unitários cobrindo:
+- Todos os 14 padrões de vulnerabilidade (positivos e negativos)
+- Formatação de documentos recuperados
+- Ferramentas RAG com retriever mockado
+- Edge cases (código vazio, input limpo, múltiplas vulnerabilidades)
+
+---
+
+## Licença
+
+MIT License
+
+## Contato
 
 Alexander Costa - https://alexcesar.com
