@@ -1,30 +1,43 @@
+import re
 import streamlit as st
 import shutil
+import os
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_community.vectorstores import Chroma
 
 from config import (
     DOCS_DIR,
     CHROMA_DB_PATH,
-    EMBEDDING_MODEL_NAME,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
     SUPPORTED_EXTENSIONS,
 )
-from tools import invalidate_retriever_cache
+from tools import invalidate_retriever_cache, get_embeddings
 
 st.set_page_config(page_title="Admin | Security Agent", page_icon="⚙️")
 
 st.title("Knowledge Base Administration ⚙️")
 st.markdown("Manage the OWASP and security standards documents that power the agent.")
 
+# --- Authentication ---
+if "admin_auth" not in st.session_state:
+    st.session_state["admin_auth"] = False
+
+if not st.session_state["admin_auth"]:
+    password = st.text_input("Enter admin password to continue:", type="password")
+    if password and password == os.environ.get("ADMIN_PASSWORD", "admin"):
+        st.session_state["admin_auth"] = True
+        st.rerun()
+    elif password:
+        st.error("Incorrect password.")
+    st.stop()
+
 # Ensure knowledge base directory exists
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def indexar_documentos(reset_db=False):
+def index_documents(reset_db: bool = False) -> None:
     """Index documents from the knowledge base directory into ChromaDB."""
     with st.spinner("Indexing documents... This may take a moment."):
         if reset_db and CHROMA_DB_PATH.exists():
@@ -32,32 +45,32 @@ def indexar_documentos(reset_db=False):
             try:
                 shutil.rmtree(CHROMA_DB_PATH)
                 st.success("Previous knowledge base deleted.")
-            except Exception as e:
-                st.error(f"Error deleting knowledge base: {e}")
+            except Exception:
+                st.error("Failed to delete existing knowledge base.")
                 return
 
-        documentos = []
+        documents = []
         for filepath in DOCS_DIR.iterdir():
             try:
                 if filepath.suffix == ".pdf":
                     loader = PyPDFLoader(str(filepath))
-                    documentos.extend(loader.load())
+                    documents.extend(loader.load())
                 elif filepath.suffix in (".md", ".txt"):
                     loader = TextLoader(str(filepath), encoding="utf-8")
-                    documentos.extend(loader.load())
-            except Exception as e:
-                st.warning(f"Could not load: {filepath.name}. Error: {e}")
+                    documents.extend(loader.load())
+            except Exception:
+                st.warning(f"Could not load: {filepath.name}")
 
-        if not documentos:
+        if not documents:
             st.warning("No valid documents found to index. Upload documents first.")
             return
 
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
-        chunks = text_splitter.split_documents(documentos)
+        chunks = text_splitter.split_documents(documents)
 
-        embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+        embeddings = get_embeddings()
 
         # ChromaDB 1.0+ auto-persists — no db.persist() needed
         Chroma.from_documents(
@@ -87,11 +100,18 @@ uploaded_files = st.file_uploader(
 
 if uploaded_files:
     for uploaded_file in uploaded_files:
-        file_path = DOCS_DIR / uploaded_file.name
+        safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', uploaded_file.name)
+        if not safe_name.lower().endswith(SUPPORTED_EXTENSIONS):
+            st.error(f"Unsupported file type: {uploaded_file.name}")
+            continue
+        file_path = DOCS_DIR / safe_name
+        if not file_path.resolve().is_relative_to(DOCS_DIR.resolve()):
+            st.error(f"Invalid filename: {uploaded_file.name}")
+            continue
         if file_path.exists():
-            st.warning(f"'{uploaded_file.name}' already exists and will be replaced.")
+            st.warning(f"'{safe_name}' already exists and will be replaced.")
         file_path.write_bytes(uploaded_file.getbuffer())
-        st.success(f"'{uploaded_file.name}' uploaded successfully.")
+        st.success(f"'{safe_name}' uploaded successfully.")
     st.cache_data.clear()
     st.rerun()
 
@@ -100,15 +120,7 @@ if uploaded_files:
 st.subheader("Documents in Knowledge Base")
 
 
-@st.cache_data(ttl=300)
-def get_files_in_dir(directory_str):
-    """List files with supported extensions."""
-    directory = DOCS_DIR
-    return [f.name for f in directory.iterdir() if f.suffix in SUPPORTED_EXTENSIONS]
-
-
-get_files_in_dir.clear()
-files_in_dir = get_files_in_dir(str(DOCS_DIR))
+files_in_dir = [f.name for f in DOCS_DIR.iterdir() if f.suffix in SUPPORTED_EXTENSIONS]
 
 if not files_in_dir:
     st.info("No documents found. Upload OWASP/security standard files to get started.")
@@ -123,10 +135,9 @@ else:
                 try:
                     file_to_delete.unlink()
                     st.success(f"'{file_name}' deleted.")
-                    get_files_in_dir.clear()
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Error deleting '{file_name}': {e}")
+                except Exception:
+                    st.error(f"Failed to delete '{file_name}'.")
 
 st.markdown("---")
 
@@ -141,7 +152,7 @@ with col_retrain:
         help="Index all documents in the knowledge base.",
         key="btn_retrain",
     ):
-        indexar_documentos(reset_db=False)
+        index_documents(reset_db=False)
 
 with col_reset:
     if st.button(
@@ -157,7 +168,7 @@ with col_reset:
         col_confirm, col_cancel = st.columns(2)
         with col_confirm:
             if st.button("Yes, Reset", key="btn_confirm_reset"):
-                indexar_documentos(reset_db=True)
+                index_documents(reset_db=True)
                 st.success("Knowledge base reset and retrained!")
                 st.session_state["confirm_reset_active"] = False
                 st.rerun()

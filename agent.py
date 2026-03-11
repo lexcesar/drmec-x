@@ -157,9 +157,10 @@ def load_security_agent():
     agent_executor = AgentExecutor(
         agent=agent,
         tools=AGENT_TOOLS,
-        verbose=True,
+        verbose=False,
         handle_parsing_errors=True,
         max_iterations=6,
+        max_execution_time=120,
         return_intermediate_steps=True,
     )
 

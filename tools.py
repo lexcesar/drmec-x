@@ -4,17 +4,18 @@ Each tool performs retrieval or deterministic computation — things
 the LLM cannot do on its own.
 """
 
-import re
 from functools import lru_cache
+from pathlib import Path
 
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 
 from config import CHROMA_DB_PATH, EMBEDDING_MODEL_NAME, RETRIEVER_K
+from static_analysis import analyze_code  # noqa: F401 — re-exported for agent.py
 
 
 @lru_cache(maxsize=1)
-def _get_embeddings():
+def get_embeddings():
     """Load embedding model once (singleton)."""
     return SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
@@ -22,7 +23,7 @@ def _get_embeddings():
 @lru_cache(maxsize=1)
 def _get_retriever():
     """Load ChromaDB retriever once (singleton)."""
-    embeddings = _get_embeddings()
+    embeddings = get_embeddings()
     db = Chroma(persist_directory=str(CHROMA_DB_PATH), embedding_function=embeddings)
     return db.as_retriever(search_kwargs={"k": RETRIEVER_K})
 
@@ -30,7 +31,7 @@ def _get_retriever():
 def invalidate_retriever_cache():
     """Call after admin reindexes the knowledge base."""
     _get_retriever.cache_clear()
-    _get_embeddings.cache_clear()
+    get_embeddings.cache_clear()
 
 
 def _format_docs(docs, max_per_doc=500):
@@ -41,7 +42,7 @@ def _format_docs(docs, max_per_doc=500):
     for i, doc in enumerate(docs, 1):
         source = doc.metadata.get("source", "Unknown")
         page = doc.metadata.get("page", "N/A")
-        source_name = source.split("/")[-1] if "/" in source else source
+        source_name = Path(source).name
         content = doc.page_content[:max_per_doc]
         results.append(f"[Source {i}: {source_name}, Page {page}]\n{content}")
     return "\n\n---\n\n".join(results)
@@ -65,98 +66,12 @@ def search_owasp_kb(query: str) -> str:
         docs = retriever.invoke(query)
         return _format_docs(docs)
     except Exception as e:
-        return f"Error searching knowledge base: {e}"
+        return "Error searching knowledge base. Ensure the knowledge base is trained."
 
 
 # ---------------------------------------------------------------------------
-# Tool 2: analyze_code — deterministic regex pattern matching
+# Tool 2: analyze_code — imported from static_analysis module
 # ---------------------------------------------------------------------------
-
-VULNERABILITY_PATTERNS = [
-    (r"(password|passwd|pwd|secret|api_key|apikey|token)\s*=\s*['\"][^'\"]+['\"]",
-     "Hardcoded credential or secret detected",
-     "A07:2021 - Identification and Authentication Failures"),
-
-    (r"(exec|eval|compile)\s*\(",
-     "Use of dangerous function (exec/eval/compile) — potential code injection",
-     "A03:2021 - Injection"),
-
-    (r"(SELECT|INSERT|UPDATE|DELETE).*(\+|%s|\.format|f['\"])",
-     "Possible SQL injection via string concatenation/formatting",
-     "A03:2021 - Injection"),
-
-    (r"subprocess\.(call|run|Popen)\s*\(.*shell\s*=\s*True",
-     "Shell command execution with shell=True — potential command injection",
-     "A03:2021 - Injection"),
-
-    (r"pickle\.(loads?|dumps?)\s*\(",
-     "Use of pickle — potential deserialization vulnerability",
-     "A08:2021 - Software and Data Integrity Failures"),
-
-    (r"yaml\.load\s*\((?!.*Loader)[^)]*\)",
-     "Unsafe YAML loading without explicit Loader",
-     "A08:2021 - Software and Data Integrity Failures"),
-
-    (r"os\.(system|popen)\s*\(",
-     "Direct OS command execution — potential command injection",
-     "A03:2021 - Injection"),
-
-    (r"verify\s*=\s*False",
-     "SSL verification disabled — vulnerable to MITM attacks",
-     "A02:2021 - Cryptographic Failures"),
-
-    (r"(md5|sha1)\s*\(",
-     "Use of weak hashing algorithm (MD5/SHA1)",
-     "A02:2021 - Cryptographic Failures"),
-
-    (r"random\.(random|randint|choice)\s*\(",
-     "Use of non-cryptographic random — use secrets module for security",
-     "A02:2021 - Cryptographic Failures"),
-
-    (r"innerHTML\s*=|\.html\s*\(|document\.write\s*\(",
-     "Potential XSS vulnerability — direct HTML injection",
-     "A03:2021 - Injection"),
-
-    (r"http://",
-     "Unencrypted HTTP URL detected — use HTTPS",
-     "A02:2021 - Cryptographic Failures"),
-
-    (r"DEBUG\s*=\s*True|debug\s*=\s*True",
-     "Debug mode enabled — should be disabled in production",
-     "A05:2021 - Security Misconfiguration"),
-
-    (r"CORS.*\*|Access-Control-Allow-Origin.*\*",
-     "Wildcard CORS policy — overly permissive",
-     "A05:2021 - Security Misconfiguration"),
-]
-
-
-def analyze_code(code: str) -> str:
-    """Analyze source code for common security vulnerability patterns using static checks.
-
-    Use this tool to perform pattern-based static analysis on the submitted code.
-    It checks for hardcoded credentials, dangerous functions, SQL injection patterns,
-    and other known insecure patterns.
-
-    Args:
-        code: The source code to analyze.
-    """
-    findings = []
-    lines = code.split("\n")
-
-    for line_num, line in enumerate(lines, 1):
-        for pattern, description, owasp_ref in VULNERABILITY_PATTERNS:
-            if re.search(pattern, line, re.IGNORECASE):
-                findings.append(
-                    f"Line {line_num}: {description}\n"
-                    f"  OWASP: {owasp_ref}\n"
-                    f"  Code: `{line.strip()}`"
-                )
-
-    if not findings:
-        return "No common vulnerability patterns detected through static analysis."
-
-    return f"Found {len(findings)} potential issue(s):\n\n" + "\n\n".join(findings)
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +93,7 @@ def get_cve_details(identifier: str) -> str:
         docs = retriever.invoke(f"details about {identifier} vulnerability")
         return _format_docs(docs)
     except Exception as e:
-        return f"Error looking up {identifier}: {e}"
+        return f"Error looking up {identifier}. Ensure the knowledge base is trained."
 
 
 # ---------------------------------------------------------------------------
@@ -201,4 +116,4 @@ def search_remediation(vulnerability_type: str) -> str:
         docs = retriever.invoke(query)
         return _format_docs(docs)
     except Exception as e:
-        return f"Error searching remediation guidance: {e}"
+        return "Error searching remediation guidance. Ensure the knowledge base is trained."

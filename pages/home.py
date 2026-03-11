@@ -12,6 +12,19 @@ st.markdown(
     "vulnerabilities using OWASP standards and best practices."
 )
 
+
+def _sanitize_code_input(code: str) -> str:
+    """Escape ReAct control tokens in user code to mitigate prompt injection."""
+    dangerous_tokens = [
+        "Thought:", "Action:", "Action Input:", "Observation:",
+        "Final Answer:", "</USER_CODE>", "<USER_CODE>",
+    ]
+    sanitized = code
+    for token in dangerous_tokens:
+        sanitized = sanitized.replace(token, f"# {token}")
+    return sanitized
+
+
 # Check if knowledge base exists
 if not CHROMA_DB_PATH.exists():
     st.error(
@@ -73,9 +86,10 @@ if st.button("🔍 Analyze Security", type="primary"):
         st.warning("Please paste some code before running the analysis.")
     else:
         # Wrap code in USER_CODE tags for prompt injection mitigation
+        sanitized_code = _sanitize_code_input(code_input)
         agent_query = (
             "Analyze this Python code for security vulnerabilities:\n"
-            f"<USER_CODE>\n{code_input}\n</USER_CODE>"
+            f"<USER_CODE>\n{sanitized_code}\n</USER_CODE>"
         )
 
         # Create containers for streaming and results
@@ -109,8 +123,8 @@ if st.button("🔍 Analyze Security", type="primary"):
                             st.code(str(observation)[:1000], language=None)
                             st.markdown("---")
 
-            except Exception as e:
-                st.error(f"Error during analysis: {e}")
+            except Exception:
+                st.error("An error occurred during analysis.")
                 st.warning(
                     "Make sure Ollama is running and the LLM model is available. "
                     "Also verify the knowledge base has been trained."

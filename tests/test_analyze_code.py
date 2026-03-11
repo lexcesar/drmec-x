@@ -1,48 +1,11 @@
-"""Unit tests for the analyze_code tool — tests every regex pattern.
+"""Unit tests for the analyze_code tool — tests every regex pattern."""
 
-We import only analyze_code and its patterns directly to avoid
-requiring langchain/chromadb for unit tests.
-"""
-
-import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Import the function and patterns directly without triggering langchain imports
-# by reconstructing the pure-logic function here
-from importlib.util import spec_from_file_location, module_from_spec
-
-def _load_analyze_code():
-    """Load only the analyze_code function and patterns from tools.py
-    by reading the source and extracting the pure logic."""
-    tools_path = Path(__file__).resolve().parent.parent / "tools.py"
-    source = tools_path.read_text()
-
-    # Extract VULNERABILITY_PATTERNS and analyze_code from source
-    # We create a minimal module with just the patterns and function
-    namespace = {"re": re}
-
-    # Extract patterns block
-    pattern_start = source.index("VULNERABILITY_PATTERNS = [")
-    pattern_end = source.index("\n]\n", pattern_start) + 3
-    exec(source[pattern_start:pattern_end], namespace)
-
-    # Extract analyze_code function
-    func_start = source.index("def analyze_code(")
-    # Find the next def or tool separator
-    next_section = source.find("\n# ----", func_start + 1)
-    if next_section == -1:
-        func_source = source[func_start:]
-    else:
-        func_source = source[func_start:next_section]
-
-    namespace["VULNERABILITY_PATTERNS"] = namespace["VULNERABILITY_PATTERNS"]
-    exec(func_source, namespace)
-    return namespace["analyze_code"]
-
-analyze_code = _load_analyze_code()
+from static_analysis import analyze_code
 
 
 def test_hardcoded_password():
