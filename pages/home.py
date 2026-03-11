@@ -2,14 +2,15 @@ import streamlit as st
 from langchain.callbacks.base import BaseCallbackHandler
 
 from config import CHROMA_DB_PATH, MAX_CODE_LENGTH
+from static_analysis import analyze_code, VULNERABILITY_PATTERNS
 from agent import load_security_agent
 
 st.set_page_config(page_title="Security Agent - Code Analyzer", page_icon="🔒")
 
 st.title("Security Agent — Code Vulnerability Analyzer 🔒")
 st.markdown(
-    "Paste your **Python** code below. The **ReAct agent** will analyze it for security "
-    "vulnerabilities using OWASP standards and best practices."
+    "Paste your **Python** code below. The system runs a **deterministic static analysis** "
+    "first, then the **ReAct agent** enhances results with OWASP knowledge base context."
 )
 
 
@@ -23,6 +24,47 @@ def _sanitize_code_input(code: str) -> str:
     for token in dangerous_tokens:
         sanitized = sanitized.replace(token, f"# {token}")
     return sanitized
+
+
+def _parse_static_findings(code: str) -> list[dict]:
+    """Run static analysis and parse findings into structured dicts."""
+    import re as _re
+    findings = []
+    lines = code.split("\n")
+    for line_num, line in enumerate(lines, 1):
+        for pattern in VULNERABILITY_PATTERNS:
+            if pattern.regex.search(line):
+                findings.append({
+                    "line": line_num,
+                    "code": line.strip(),
+                    "description": pattern.description,
+                    "owasp": pattern.owasp_ref,
+                    "severity": _classify_severity(pattern.owasp_ref),
+                })
+    return findings
+
+
+def _classify_severity(owasp_ref: str) -> str:
+    """Map OWASP category to severity level."""
+    critical = ["A03:2021"]  # Injection
+    high = ["A07:2021", "A08:2021", "A02:2021"]  # Auth, Integrity, Crypto
+    medium = ["A05:2021"]  # Misconfiguration
+    owasp_code = owasp_ref.split(" - ")[0].strip()
+    if owasp_code in critical:
+        return "Critical"
+    elif owasp_code in high:
+        return "High"
+    elif owasp_code in medium:
+        return "Medium"
+    return "Low"
+
+
+SEVERITY_COLORS = {
+    "Critical": "🔴",
+    "High": "🟠",
+    "Medium": "🟡",
+    "Low": "🔵",
+}
 
 
 # Check if knowledge base exists
@@ -85,18 +127,77 @@ if st.button("🔍 Analyze Security", type="primary"):
     if not code_input or code_input.strip() == "":
         st.warning("Please paste some code before running the analysis.")
     else:
-        # Wrap code in USER_CODE tags for prompt injection mitigation
-        sanitized_code = _sanitize_code_input(code_input)
-        agent_query = (
-            "Analyze this Python code for security vulnerabilities:\n"
-            f"<USER_CODE>\n{sanitized_code}\n</USER_CODE>"
-        )
+        # ========================================================
+        # PHASE 1: Deterministic Static Analysis (instant, reliable)
+        # ========================================================
+        st.subheader("Phase 1 — Static Analysis Results")
 
-        # Create containers for streaming and results
+        findings = _parse_static_findings(code_input)
+
+        if findings:
+            st.error(f"**{len(findings)} vulnerability pattern(s) detected**")
+
+            # Build a clear table
+            for f in findings:
+                severity_icon = SEVERITY_COLORS.get(f["severity"], "⚪")
+                st.markdown(
+                    f"{severity_icon} **{f['severity']}** — Line {f['line']}: "
+                    f"**{f['description']}**"
+                )
+                st.code(f["code"], language="python")
+                st.caption(f"OWASP: {f['owasp']}")
+                st.markdown("")
+
+            # Summary table
+            with st.expander("📊 Summary Table", expanded=True):
+                table_data = []
+                for f in findings:
+                    table_data.append({
+                        "Line": f["line"],
+                        "Severity": f"{SEVERITY_COLORS.get(f['severity'], '')} {f['severity']}",
+                        "Issue": f["description"],
+                        "OWASP": f["owasp"],
+                        "Code": f"`{f['code'][:60]}`",
+                    })
+                st.table(table_data)
+        else:
+            st.success("No common vulnerability patterns detected in static analysis.")
+
+        st.markdown("---")
+
+        # ========================================================
+        # PHASE 2: ReAct Agent (LLM + RAG for deeper analysis)
+        # ========================================================
+        st.subheader("Phase 2 — ReAct Agent Analysis")
+        st.caption("The agent uses reasoning + OWASP knowledge base for deeper context.")
+
+        # Build a concise summary for the agent instead of raw code
+        # (local models are bad at extracting multi-line code from prompts)
+        sanitized_code = _sanitize_code_input(code_input)
+
+        if findings:
+            findings_summary = "\n".join(
+                f"- Line {f['line']}: {f['description']} ({f['owasp']}) — `{f['code'][:80]}`"
+                for f in findings
+            )
+            agent_query = (
+                "The following Python code was analyzed. Static analysis found these issues:\n"
+                f"{findings_summary}\n\n"
+                "Search the OWASP knowledge base for detailed remediation guidance for each "
+                "vulnerability found. Then provide a Final Answer with fix suggestions.\n\n"
+                f"Full code:\n<USER_CODE>\n{sanitized_code}\n</USER_CODE>"
+            )
+        else:
+            agent_query = (
+                "Analyze this Python code for security vulnerabilities. "
+                "Static analysis found no patterns, but check for logic issues:\n"
+                f"<USER_CODE>\n{sanitized_code}\n</USER_CODE>"
+            )
+
         reasoning_container = st.container()
         reasoning_container.markdown("### 🧠 Agent Reasoning (live)")
 
-        with st.spinner("Agent is analyzing your code..."):
+        with st.spinner("ReAct agent is analyzing..."):
             try:
                 callback = StreamlitReActCallback(reasoning_container)
                 result = agent_executor.invoke(
@@ -105,10 +206,17 @@ if st.button("🔍 Analyze Security", type="primary"):
                 )
 
                 # Display the final answer
-                st.subheader("Security Analysis Results")
-                st.markdown(result["output"])
+                st.subheader("Agent Recommendations")
+                output = result["output"]
+                if "Agent stopped" in output:
+                    st.warning(
+                        "The agent reached its iteration limit. "
+                        "The static analysis results above are still valid."
+                    )
+                else:
+                    st.markdown(output)
 
-                # Display ReAct reasoning steps (full detail)
+                # Display ReAct trace
                 if result.get("intermediate_steps"):
                     with st.expander(
                         "📋 Full ReAct Trace (all steps)", expanded=False
@@ -124,15 +232,14 @@ if st.button("🔍 Analyze Security", type="primary"):
                             st.markdown("---")
 
             except Exception:
-                st.error("An error occurred during analysis.")
                 st.warning(
-                    "Make sure Ollama is running and the LLM model is available. "
-                    "Also verify the knowledge base has been trained."
+                    "The ReAct agent could not complete its analysis. "
+                    "The static analysis results above are still valid. "
+                    "Make sure Ollama is running with the correct model."
                 )
 
 st.markdown("---")
 st.markdown(
-    "This agent uses **ReAct (Reasoning and Acting)** — it reasons about potential "
-    "vulnerabilities, acts by consulting tools and the OWASP knowledge base, "
-    "observes results, and continues until it can deliver a structured review."
+    "**Phase 1** uses deterministic regex patterns (always reliable). "
+    "**Phase 2** uses a ReAct agent (LLM + OWASP RAG) for deeper context and fix suggestions."
 )

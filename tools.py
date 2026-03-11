@@ -34,7 +34,7 @@ def invalidate_retriever_cache():
     get_embeddings.cache_clear()
 
 
-def _format_docs(docs, max_per_doc=500):
+def _format_docs(docs, max_per_doc=1500):
     """Format retrieved documents with source attribution."""
     if not docs:
         return "No relevant documents found in the knowledge base."

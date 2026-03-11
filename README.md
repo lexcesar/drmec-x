@@ -1,46 +1,66 @@
 # Security Agent — OWASP Code Analyzer 🔒
 
-## About
+## Sobre o Projeto
 
-An AI-powered **Security Engineering Agent** that uses **ReAct (Reasoning and Acting)** to analyze source code for vulnerabilities based on OWASP standards and security best practices.
+Agente de IA para **Engenharia de Software para Segurança** que utiliza o padrão **ReAct (Reasoning and Acting)** para analisar código Python em busca de vulnerabilidades com base nos padrões OWASP.
 
-The agent doesn't just answer questions — it **reasons** about your code, **acts** by searching the security knowledge base and analyzing patterns, **observes** results, and continues reasoning until it delivers a complete security review.
+O sistema opera em **duas fases**:
 
-### Features
+1. **Análise Estática Determinística** — 14 padrões regex pré-compilados detectam vulnerabilidades instantaneamente, com severidade e referência OWASP
+2. **Agente ReAct com RAG** — LLM com raciocínio multi-step consulta a base de conhecimento OWASP para contexto adicional e sugestões de correção
 
-- **ReAct Agent**: Multi-step reasoning loop (Thought → Action → Observation → ...) for thorough analysis
-- **OWASP Knowledge Base**: Upload security standards (OWASP Top 10, CWE, etc.) as the agent's knowledge source
-- **Code Pattern Analysis**: Static checks for common vulnerability patterns (SQL injection, hardcoded credentials, XSS, etc.)
-- **Structured Review**: Results organized by Vulnerabilities, OWASP References, Fix Suggestions, and Security Policy
-- **Agent Transparency**: View the agent's complete reasoning process step by step
-- **Multiple Languages**: Supports Python, JavaScript, Java, C/C++, Go
+### Stack Tecnológica
 
-### Tech Stack
-
-- **Python**: Core language
-- **Streamlit**: Interactive web UI
-- **Ollama**: Local LLM inference (llama3)
-- **LangChain**: ReAct agent framework with tools
-- **ChromaDB**: Vector database for security knowledge base
-- **Sentence Transformers**: Text embeddings (all-MiniLM-L6-v2)
+| Tecnologia | Função |
+|---|---|
+| **Python 3.9+** | Linguagem principal |
+| **Streamlit** | Interface web interativa |
+| **Ollama** | Inferência LLM local (llama3.1:8b) |
+| **LangChain** | Framework ReAct agent com ferramentas |
+| **ChromaDB** | Banco vetorial para base de conhecimento OWASP |
+| **Sentence Transformers** | Embeddings de texto (all-MiniLM-L6-v2) |
 
 ---
 
-## How to Run
+## Arquitetura
 
-### Prerequisites
+```
+Streamlit UI
+├── Home Page (entrada de código → análise em 2 fases)
+│   ├── Phase 1: Análise estática (regex, instantânea)
+│   └── Phase 2: Agente ReAct (LLM + RAG)
+└── Admin Page (autenticada: upload/treino/reset da KB)
+
+Agente ReAct (LangChain AgentExecutor)
+├── Ferramentas (4):
+│   ├── analyze_code      — análise estática com 14 padrões regex
+│   ├── search_owasp_kb   — busca vetorial na base OWASP
+│   ├── get_cve_details   — lookup de CVE/CWE específicos
+│   └── search_remediation — busca direcionada para correções
+├── Retriever singleton (lru_cache)
+├── Streaming callbacks → UI em tempo real
+└── Ollama llama3.1:8b (temperature=0)
+
+Armazenamento: ChromaDB (KB vetorial) + knowledge-base/ (documentos fonte)
+```
+
+---
+
+## Como Executar
+
+### Pré-requisitos
 
 - Python 3.9+
-- [Ollama](https://ollama.com) installed and running
+- [Ollama](https://ollama.com) instalado e rodando
 
-### 1. Clone the Repository
+### 1. Clonar o Repositório
 
 ```bash
-git clone https://github.com/dnegrone/drmec-x.git
+git clone https://github.com/lexcesar/drmec-x.git
 cd drmec-x
 ```
 
-### 2. Create Virtual Environment
+### 2. Criar Ambiente Virtual
 
 ```bash
 python3 -m venv venv
@@ -48,84 +68,181 @@ source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
 ```
 
-### 3. Install Dependencies
+### 3. Instalar Dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Download the LLM Model
+### 4. Baixar o Modelo LLM
 
 ```bash
-ollama pull llama3
+ollama pull llama3.1:8b
 ```
 
-Make sure the Ollama service is running in the background.
+Certifique-se de que o serviço Ollama está rodando.
 
-### 5. Run the Application
+### 5. Iniciar a Aplicação
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-The app will open at http://localhost:8501.
+Acesse http://localhost:8501.
 
 ---
 
-## Usage
+## Uso
 
-### 1. Set Up Knowledge Base (Admin Page)
+### 1. Configurar Base de Conhecimento (Página Admin)
 
-1. Navigate to the **Admin** page via the sidebar
-2. Upload OWASP/security documents (PDF, Markdown, or text files)
-3. Click **"Train System with Current Data"** to index the documents
+1. Acesse a página **Admin** pelo sidebar
+2. Insira a senha (padrão: `admin`, configurável via `ADMIN_PASSWORD`)
+3. Faça upload de documentos OWASP (PDF, Markdown ou texto)
+4. Clique em **"Train System with Current Data"**
 
-### 2. Analyze Code (Home Page)
+### 2. Analisar Código (Página Home)
 
-1. Navigate to the **Home** page
-2. Select the programming language
-3. Paste your code in the editor
-4. Click **"Analyze Security"**
-5. View the structured security review
-6. Expand **"Agent Reasoning Process"** to see the ReAct steps
+1. Acesse a página **Home**
+2. Cole seu código Python na área de texto
+3. Clique em **"Analyze Security"**
+4. Veja os resultados em duas fases:
+   - **Phase 1**: Tabela com vulnerabilidades detectadas (severidade, linha, OWASP)
+   - **Phase 2**: Análise do agente ReAct com contexto da base OWASP
 
-### ReAct Agent Flow
+### Exemplo de Código para Teste
 
-The agent follows a multi-step reasoning process:
+```python
+import os
+import pickle
+import random
+
+password = "admin123"
+DEBUG = True
+
+def get_user(user_id):
+    query = "SELECT * FROM users WHERE id=" + user_id
+    return db.execute(query)
+
+def run_command(cmd):
+    os.system(cmd)
+
+def load_data(raw_bytes):
+    return pickle.loads(raw_bytes)
+
+def generate_token():
+    return random.randint(1000, 9999)
+
+def fetch_data(url):
+    requests.get(url, verify=False)
+
+config = yaml.load(open("config.yml"))
+```
+
+---
+
+## Padrão ReAct (Reasoning and Acting)
+
+O agente segue um loop de raciocínio multi-step:
 
 ```
-Thought: I need to analyze this code for security vulnerabilities.
-Action: analyze_code_patterns (static vulnerability detection)
-Observation: Found hardcoded credentials on line 8...
-
-Thought: Let me check the OWASP knowledge base for relevant standards.
-Action: search_owasp_kb (vector search on security docs)
-Observation: OWASP A07:2021 - Identification and Authentication Failures...
-
-Thought: I should suggest fixes for the identified issues.
-Action: suggest_fix (knowledge-base-powered fix recommendations)
-Observation: Replace hardcoded credentials with environment variables...
-
-Final Answer: Structured security review with vulnerabilities, references, and fixes.
+Thought  → "Devo verificar este código para padrões de injeção SQL"
+Action   → analyze_code (detecção estática de padrões)
+Observe  → "Encontrada concatenação SQL na linha 10"
+Thought  → "Vou buscar os padrões OWASP para esta vulnerabilidade"
+Action   → search_owasp_kb (busca vetorial nos documentos de segurança)
+Observe  → "OWASP A03:2021 - Injection..."
+Thought  → "Agora preciso buscar orientação de correção"
+Action   → search_remediation (busca direcionada para remediação)
+Observe  → "Use queries parametrizadas..."
+Answer   → Relatório estruturado com findings + correções
 ```
 
 ---
 
-## Agent Tools
+## Ferramentas do Agente
 
-| Tool | Description |
-|------|-------------|
-| `search_owasp_kb` | Searches the OWASP/security knowledge base via vector similarity |
-| `analyze_code_patterns` | Static pattern matching for common vulnerabilities |
-| `suggest_fix` | Generates fix recommendations from the knowledge base |
-| `generate_security_policy` | Creates a security policy based on findings |
+| Ferramenta | Tipo | O que faz (que o LLM não consegue sozinho) |
+|---|---|---|
+| `analyze_code` | Determinístico | Matching de regex para 14 padrões de vulnerabilidade |
+| `search_owasp_kb` | RAG | Busca por similaridade vetorial nos documentos de segurança |
+| `get_cve_details` | RAG | Lookup de identificadores CVE/CWE específicos na KB |
+| `search_remediation` | RAG | Busca direcionada para seções de correção/mitigação |
+
+### Padrões de Vulnerabilidade Detectados (Phase 1)
+
+| Padrão | Severidade | OWASP |
+|---|---|---|
+| Credenciais hardcoded (password, api_key, token) | 🟠 High | A07:2021 |
+| Funções perigosas (exec, eval, compile) | 🔴 Critical | A03:2021 |
+| SQL Injection (concatenação/format) | 🔴 Critical | A03:2021 |
+| Command Injection (subprocess shell=True) | 🔴 Critical | A03:2021 |
+| Desserialização insegura (pickle) | 🟠 High | A08:2021 |
+| YAML load sem Loader | 🟠 High | A08:2021 |
+| Execução de comando OS (os.system/popen) | 🔴 Critical | A03:2021 |
+| SSL verificação desabilitada | 🟠 High | A02:2021 |
+| Hash fraco (MD5/SHA1) | 🟠 High | A02:2021 |
+| Random não-criptográfico | 🟠 High | A02:2021 |
+| XSS (innerHTML/document.write) | 🔴 Critical | A03:2021 |
+| URL HTTP sem criptografia | 🟠 High | A02:2021 |
+| Debug mode habilitado | 🟡 Medium | A05:2021 |
+| CORS wildcard (*) | 🟡 Medium | A05:2021 |
 
 ---
 
-## License
+## Segurança da Aplicação
+
+O próprio sistema implementa medidas de segurança:
+
+- **Mitigação de Prompt Injection**: delimitadores `<USER_CODE>` + sanitização de tokens ReAct
+- **Autenticação no Admin**: senha configurável via variável de ambiente
+- **Sanitização de uploads**: validação de nome de arquivo contra path traversal
+- **Validação de extensão**: apenas PDF, MD e TXT aceitos (server-side)
+- **Mensagens de erro genéricas**: sem exposição de detalhes internos
+- **Timeout do agente**: limite de 120s e 6 iterações
+
+---
+
+## Estrutura de Arquivos
+
+```
+drmec-x/
+├── streamlit_app.py        # Ponto de entrada
+├── config.py               # Configuração centralizada (pathlib)
+├── static_analysis.py      # Padrões regex + analyze_code (sem dependências LangChain)
+├── tools.py                # 3 ferramentas RAG + retriever singleton
+├── agent.py                # Agente ReAct + prompt com few-shot
+├── pages/
+│   ├── home.py             # UI de análise (2 fases)
+│   └── admin.py            # Administração da KB (autenticada)
+├── knowledge-base/         # Documentos OWASP (fonte)
+├── chroma_db/              # Banco vetorial ChromaDB (gerado)
+├── tests/
+│   ├── test_analyze_code.py  # 27 testes dos padrões regex
+│   └── test_tools.py         # 11 testes das ferramentas RAG (mock)
+└── requirements.txt
+```
+
+---
+
+## Testes
+
+```bash
+python3 -m pytest tests/ -v
+```
+
+38 testes unitários cobrindo:
+- Todos os 14 padrões de vulnerabilidade (positivos e negativos)
+- Formatação de documentos recuperados
+- Ferramentas RAG com retriever mockado
+- Edge cases (código vazio, input limpo, múltiplas vulnerabilidades)
+
+---
+
+## Licença
 
 MIT License
 
-## Contact
+## Contato
 
 Alexander Costa - https://alexcesar.com
