@@ -11,14 +11,14 @@ O sistema opera em **duas fases**:
 
 ### Stack Tecnológica
 
-| Tecnologia | Função |
-|---|---|
-| **Python 3.9+** | Linguagem principal |
-| **Streamlit** | Interface web interativa |
-| **Ollama** | Inferência LLM local (llama3.1:8b) |
-| **LangChain** | Framework ReAct agent com ferramentas |
-| **ChromaDB** | Banco vetorial para base de conhecimento OWASP |
-| **Sentence Transformers** | Embeddings de texto (all-MiniLM-L6-v2) |
+| Tecnologia                | Função                                         |
+| ------------------------- | ---------------------------------------------- |
+| **Python 3.9+**           | Linguagem principal                            |
+| **Streamlit**             | Interface web interativa                       |
+| **Ollama**                | Inferência LLM local (llama3.1:8b)             |
+| **LangChain**             | Framework ReAct agent com ferramentas          |
+| **ChromaDB**              | Banco vetorial para base de conhecimento OWASP |
+| **Sentence Transformers** | Embeddings de texto (all-MiniLM-L6-v2)         |
 
 ---
 
@@ -162,31 +162,31 @@ Answer   → Relatório estruturado com findings + correções
 
 ## Ferramentas do Agente
 
-| Ferramenta | Tipo | O que faz (que o LLM não consegue sozinho) |
-|---|---|---|
-| `analyze_code` | Determinístico | Matching de regex para 14 padrões de vulnerabilidade |
-| `search_owasp_kb` | RAG | Busca por similaridade vetorial nos documentos de segurança |
-| `get_cve_details` | RAG | Lookup de identificadores CVE/CWE específicos na KB |
-| `search_remediation` | RAG | Busca direcionada para seções de correção/mitigação |
+| Ferramenta           | Tipo           | O que faz (que o LLM não consegue sozinho)                  |
+| -------------------- | -------------- | ----------------------------------------------------------- |
+| `analyze_code`       | Determinístico | Matching de regex para 14 padrões de vulnerabilidade        |
+| `search_owasp_kb`    | RAG            | Busca por similaridade vetorial nos documentos de segurança |
+| `get_cve_details`    | RAG            | Lookup de identificadores CVE/CWE específicos na KB         |
+| `search_remediation` | RAG            | Busca direcionada para seções de correção/mitigação         |
 
 ### Padrões de Vulnerabilidade Detectados (Phase 1)
 
-| Padrão | Severidade | OWASP |
-|---|---|---|
-| Credenciais hardcoded (password, api_key, token) | 🟠 High | A07:2021 |
-| Funções perigosas (exec, eval, compile) | 🔴 Critical | A03:2021 |
-| SQL Injection (concatenação/format) | 🔴 Critical | A03:2021 |
-| Command Injection (subprocess shell=True) | 🔴 Critical | A03:2021 |
-| Desserialização insegura (pickle) | 🟠 High | A08:2021 |
-| YAML load sem Loader | 🟠 High | A08:2021 |
-| Execução de comando OS (os.system/popen) | 🔴 Critical | A03:2021 |
-| SSL verificação desabilitada | 🟠 High | A02:2021 |
-| Hash fraco (MD5/SHA1) | 🟠 High | A02:2021 |
-| Random não-criptográfico | 🟠 High | A02:2021 |
-| XSS (innerHTML/document.write) | 🔴 Critical | A03:2021 |
-| URL HTTP sem criptografia | 🟠 High | A02:2021 |
-| Debug mode habilitado | 🟡 Medium | A05:2021 |
-| CORS wildcard (*) | 🟡 Medium | A05:2021 |
+| Padrão                                           | Severidade  | OWASP    |
+| ------------------------------------------------ | ----------- | -------- |
+| Credenciais hardcoded (password, api_key, token) | 🟠 High     | A07:2021 |
+| Funções perigosas (exec, eval, compile)          | 🔴 Critical | A03:2021 |
+| SQL Injection (concatenação/format)              | 🔴 Critical | A03:2021 |
+| Command Injection (subprocess shell=True)        | 🔴 Critical | A03:2021 |
+| Desserialização insegura (pickle)                | 🟠 High     | A08:2021 |
+| YAML load sem Loader                             | 🟠 High     | A08:2021 |
+| Execução de comando OS (os.system/popen)         | 🔴 Critical | A03:2021 |
+| SSL verificação desabilitada                     | 🟠 High     | A02:2021 |
+| Hash fraco (MD5/SHA1)                            | 🟠 High     | A02:2021 |
+| Random não-criptográfico                         | 🟠 High     | A02:2021 |
+| XSS (innerHTML/document.write)                   | 🔴 Critical | A03:2021 |
+| URL HTTP sem criptografia                        | 🟠 High     | A02:2021 |
+| Debug mode habilitado                            | 🟡 Medium   | A05:2021 |
+| CORS wildcard (\*)                               | 🟡 Medium   | A05:2021 |
 
 ---
 
@@ -232,6 +232,7 @@ python3 -m pytest tests/ -v
 ```
 
 38 testes unitários cobrindo:
+
 - Todos os 14 padrões de vulnerabilidade (positivos e negativos)
 - Formatação de documentos recuperados
 - Ferramentas RAG com retriever mockado
@@ -241,8 +242,12 @@ python3 -m pytest tests/ -v
 
 ## Licença
 
-Proprietary License - All Rights Reserved. Este software é propriedade exclusiva de Alexander Costa. Cópia, modificação, distribuição e uso comercial são estritamente proibidos sem autorização prévia por escrito. Consulte o arquivo [LICENSE](LICENSE) para detalhes.
+Proprietary License - All Rights Reserved. Este software é propriedade exclusiva de Alexander Cesar Luiz Costa. Cópia, modificação, distribuição e uso comercial são estritamente proibidos sem autorização prévia por escrito. Consulte o arquivo [LICENSE](LICENSE) para detalhes.
 
 ## Contato
 
-Alexander Costa - https://alexcesar.com
+- Alexander Cesar Luiz Costa (matrícula: 238646)
+- Anderson Arruda (matrícula: 235984)
+- Jackson Jovino Miranda (matrícula: )
+- Marcelo Granzoto (matrícula: 229624)
+- Renan Carlos Silva Braz Tafner (matrícula: 229121)

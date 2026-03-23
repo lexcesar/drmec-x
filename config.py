@@ -18,7 +18,7 @@ CHUNK_OVERLAP = 300
 RETRIEVER_K = 3
 
 # Code Input
-MAX_CODE_LENGTH = 4500
+MAX_CODE_LENGTH = 10000 # modified for testing purposes
 
 # Supported file extensions for knowledge base
 SUPPORTED_EXTENSIONS = (".pdf", ".md", ".txt")
